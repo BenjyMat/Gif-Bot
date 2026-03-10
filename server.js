@@ -2,8 +2,9 @@ const express = require("express");
 const app = express();
 app.use(express.json());
 
-const BOT_ID    = process.env.BOT_ID    || "YOUR_BOT_ID";
-const KLIPY_KEY = process.env.KLIPY_KEY || "YOUR_KLIPY_KEY";
+const BOT_ID       = process.env.BOT_ID       || "YOUR_BOT_ID";
+const KLIPY_KEY    = process.env.KLIPY_KEY    || "YOUR_KLIPY_KEY";
+const GROUPME_TOKEN = process.env.GROUPME_TOKEN || "YOUR_GROUPME_TOKEN";
 
 const CATEGORIES = {
   sports:   "sports celebration",
@@ -51,12 +52,9 @@ async function fetchGif(query) {
     const url = `https://api.klipy.com/api/v1/${KLIPY_KEY}/gifs/search?q=${q}&per_page=20`;
     const res  = await fetch(url);
     const data = await res.json();
-
     const results = data.data?.data || data.data || data.results || [];
     if (results.length === 0) return null;
-
     const pick = results[Math.floor(Math.random() * results.length)];
-
     return (
       pick?.file?.hd?.gif?.url ||
       pick?.file?.sd?.gif?.url ||
@@ -75,6 +73,33 @@ async function fetchRandom() {
   return fetchGif(q);
 }
 
+// Download GIF bytes from Klipy then re-upload to GroupMe image service
+async function uploadToGroupMe(gifUrl) {
+  try {
+    // 1. Download the GIF
+    const gifRes = await fetch(gifUrl);
+    const buffer = await gifRes.arrayBuffer();
+
+    // 2. Upload to GroupMe image service
+    const uploadRes = await fetch("https://image.groupme.com/pictures", {
+      method: "POST",
+      headers: {
+        "Content-Type": "image/gif",
+        "X-Access-Token": GROUPME_TOKEN,
+      },
+      body: buffer,
+    });
+    const uploadData = await uploadRes.json();
+    console.log("GroupMe upload response:", JSON.stringify(uploadData));
+
+    // GroupMe returns { payload: { url, picture_url } }
+    return uploadData?.payload?.picture_url || uploadData?.payload?.url || null;
+  } catch (err) {
+    console.error("uploadToGroupMe error:", err);
+    return null;
+  }
+}
+
 async function sendMessage(text) {
   await fetch("https://api.groupme.com/v3/bots/post", {
     method: "POST",
@@ -83,14 +108,21 @@ async function sendMessage(text) {
   });
 }
 
-async function sendGif(gifUrl, caption) {
+async function sendGif(gifUrl) {
+  // Upload to GroupMe first
+  const hostedUrl = await uploadToGroupMe(gifUrl);
+  if (!hostedUrl) {
+    // fallback: send as link
+    await sendMessage(gifUrl);
+    return;
+  }
   await fetch("https://api.groupme.com/v3/bots/post", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       bot_id: BOT_ID,
-      text: caption || "",
-      attachments: [{ type: "image", url: gifUrl }],
+      text: "",
+      attachments: [{ type: "image", url: hostedUrl }],
     }),
   });
 }
@@ -111,7 +143,7 @@ app.post("/webhook", async (req, res) => {
     }
     if (command === "random") {
       const gif = await fetchRandom();
-      if (gif) await sendGif(gif, "🎲 Random GIF!");
+      if (gif) await sendGif(gif);
       else await sendMessage("Couldn't find one, try again!");
       return;
     }
@@ -119,14 +151,14 @@ app.post("/webhook", async (req, res) => {
       const query = parts.slice(1).join(" ");
       if (!query) { await sendMessage("Usage: !search <your query>"); return; }
       const gif = await fetchGif(query);
-      if (gif) await sendGif(gif, `🔍 ${query}`);
+      if (gif) await sendGif(gif);
       else await sendMessage(`No results for "${query}"`);
       return;
     }
     if (CATEGORIES[command] !== undefined) {
       const query = CATEGORIES[command] || command;
       const gif   = await fetchGif(query);
-      if (gif) await sendGif(gif, `!${command}`);
+      if (gif) await sendGif(gif);
       else await sendMessage(`No GIFs found for !${command}`);
       return;
     }
