@@ -49,23 +49,18 @@ async function fetchGif(query) {
   try {
     const q = encodeURIComponent(query);
     const url = `https://api.klipy.com/api/v1/${KLIPY_KEY}/gifs/search?q=${q}&per_page=20`;
-    console.log("KLIPY URL:", url);
     const res  = await fetch(url);
     const data = await res.json();
-    console.log("KLIPY RAW:", JSON.stringify(data).slice(0, 800));
 
-    const results = data.data || data.results || data.gifs || [];
+    const results = data.data?.data || data.data || data.results || [];
     if (results.length === 0) return null;
 
     const pick = results[Math.floor(Math.random() * results.length)];
-    console.log("PICK:", JSON.stringify(pick).slice(0, 400));
 
     return (
-      pick?.files?.gif?.url          ||
-      pick?.files?.fixed_height?.url ||
-      pick?.media_formats?.gif?.url  ||
-      pick?.gif?.url                 ||
-      pick?.url                      ||
+      pick?.file?.hd?.gif?.url ||
+      pick?.file?.sd?.gif?.url ||
+      pick?.file?.gif?.url     ||
       null
     );
   } catch (err) {
