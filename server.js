@@ -2,6 +2,29 @@ const express = require("express");
 const app = express();
 app.use(express.json());
 
+// Allow browser requests from any origin (for GIF downloader web app)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  next();
+});
+
+// Proxy endpoint — browser calls this, server calls Klipy
+app.get("/search", async (req, res) => {
+  try {
+    const q    = encodeURIComponent(req.query.q || "funny");
+    const n    = Math.min(parseInt(req.query.n || "50"), 50);
+    const page = parseInt(req.query.page || "1");
+    const url  = `https://api.klipy.com/api/v1/${KLIPY_KEY}/gifs/search?q=${q}&per_page=${n}&page=${page}`;
+    const r    = await fetch(url);
+    const data = await r.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 const BOT_ID        = process.env.BOT_ID        || "YOUR_BOT_ID";
 const KLIPY_KEY     = process.env.KLIPY_KEY     || "YOUR_KLIPY_KEY";
 const GROUPME_TOKEN = process.env.GROUPME_TOKEN || "YOUR_GROUPME_TOKEN";
